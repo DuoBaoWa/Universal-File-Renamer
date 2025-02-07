@@ -25,6 +25,9 @@ class FileRenamerApp:
         self.current_rule = None
         self.rule_params = {}
 
+        # 新增过滤模式变量
+        self.filter_patterns = []
+
     def create_widgets(self):
         # 文件列表
         self.tree = ttk.Treeview(self.root, columns=("original", "new"), show="headings")
@@ -60,7 +63,27 @@ class FileRenamerApp:
         # 状态栏
         self.status = ttk.Label(self.root, text="就绪", anchor=tk.W)
 
+        # 新增过滤组件
+        self.filter_frame = ttk.Frame(self.toolbar)
+        self.lbl_filter = ttk.Label(self.filter_frame, text="文件过滤:")
+        self.ent_filter = ttk.Entry(self.filter_frame, width=25)
+        self.ent_filter.insert(0, "*.*")  # 默认不过滤
+        self.btn_filter = ttk.Button(self.filter_frame, text="应用", command=self.update_filter)
+
     def setup_layout(self):
+
+        # 调整工具栏布局
+        self.toolbar.pack(fill=tk.X, padx=5, pady=5)
+        self.btn_add.pack(side=tk.LEFT, padx=2)
+        self.btn_add_dir.pack(side=tk.LEFT, padx=2)
+        self.btn_clear.pack(side=tk.LEFT, padx=2)
+
+        # 添加过滤组件到工具栏
+        self.filter_frame.pack(side=tk.RIGHT, padx=5)
+        self.lbl_filter.pack(side=tk.LEFT)
+        self.ent_filter.pack(side=tk.LEFT, padx=2)
+        self.btn_filter.pack(side=tk.LEFT)
+
         # 布局管理
         self.toolbar.pack(fill=tk.X, padx=5, pady=5)
         self.btn_add.pack(side=tk.LEFT, padx=2)
@@ -80,6 +103,36 @@ class FileRenamerApp:
         self.btn_undo.pack(side=tk.RIGHT, padx=5, pady=5)
         
         self.status.pack(side=tk.BOTTOM, fill=tk.X)
+
+    def update_filter(self):
+        """更新文件过滤模式"""
+        patterns = self.ent_filter.get().split(";")
+        self.filter_patterns = [p.strip() for p in patterns if p.strip()]
+        messagebox.showinfo("过滤更新", f"已设置过滤模式: {self.filter_patterns}")
+        self.clear_list()  # 清空当前列表以应用新过滤
+
+    def is_file_match(self, filename):
+        """检查文件是否符合过滤条件"""
+        if not self.filter_patterns:
+            return True
+        return any(fnmatch.fnmatch(filename, pattern) for pattern in self.filter_patterns)
+
+    def add_files(self):
+        files = filedialog.askopenfilenames()
+        if files:
+            # 添加过滤逻辑
+            filtered = [f for f in files if self.is_file_match(os.path.basename(f))]
+            self.files.extend(filtered)
+            self.update_file_list()
+
+    def add_directory(self):
+        directory = filedialog.askdirectory()
+        if directory:
+            for root, dirs, files in os.walk(directory):
+                for file in files:
+                    if self.is_file_match(file):
+                        self.files.append(os.path.join(root, file))
+            self.update_file_list()
 
     def update_rule_ui(self, event=None):
         # 清空参数区域
