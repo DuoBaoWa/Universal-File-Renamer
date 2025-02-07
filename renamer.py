@@ -5,6 +5,7 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from datetime import datetime
 from pathlib import Path
+import fnmatch  # 导入fnmatch模块，用于文件名匹配
 
 class FileRenamerApp:
     def __init__(self, root):
@@ -44,7 +45,7 @@ class FileRenamerApp:
         
         # 规则配置
         self.rule_frame = ttk.LabelFrame(self.root, text="重命名规则")
-        self.rule_type = ttk.Combobox(self.rule_frame, values=[
+        self.rule_type = ttk.Combobox(self.rule_frame, values=[  # 下拉框
             "添加前缀", 
             "添加后缀",
             "替换文本",
@@ -52,7 +53,7 @@ class FileRenamerApp:
             "序号生成",
             "日期前缀"
         ])
-        self.rule_type.bind("<<ComboboxSelected>>", self.update_rule_ui)
+        self.rule_type.bind("<<ComboboxSelected>>", self.update_rule_ui)  # 绑定选择事件
         self.rule_params_frame = ttk.Frame(self.rule_frame)
         
         # 操作按钮
@@ -71,7 +72,6 @@ class FileRenamerApp:
         self.btn_filter = ttk.Button(self.filter_frame, text="应用", command=self.update_filter)
 
     def setup_layout(self):
-
         # 调整工具栏布局
         self.toolbar.pack(fill=tk.X, padx=5, pady=5)
         self.btn_add.pack(side=tk.LEFT, padx=2)
@@ -85,11 +85,6 @@ class FileRenamerApp:
         self.btn_filter.pack(side=tk.LEFT)
 
         # 布局管理
-        self.toolbar.pack(fill=tk.X, padx=5, pady=5)
-        self.btn_add.pack(side=tk.LEFT, padx=2)
-        self.btn_add_dir.pack(side=tk.LEFT, padx=2)
-        self.btn_clear.pack(side=tk.LEFT, padx=2)
-        
         self.tree.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
         
         self.rule_frame.pack(fill=tk.X, padx=5, pady=5)
@@ -135,6 +130,7 @@ class FileRenamerApp:
             self.update_file_list()
 
     def update_rule_ui(self, event=None):
+        """更新规则配置界面"""
         # 清空参数区域
         for widget in self.rule_params_frame.winfo_children():
             widget.destroy()
@@ -178,20 +174,6 @@ class FileRenamerApp:
             self.rule_params["date_format"].insert(0, "%Y-%m-%d")
             self.rule_params["date_format"].pack(side=tk.LEFT)
 
-    def add_files(self):
-        files = filedialog.askopenfilenames()
-        if files:
-            self.files.extend(files)
-            self.update_file_list()
-            
-    def add_directory(self):
-        directory = filedialog.askdirectory()
-        if directory:
-            for root, dirs, files in os.walk(directory):
-                for file in files:
-                    self.files.append(os.path.join(root, file))
-            self.update_file_list()
-
     def clear_list(self):
         self.files.clear()
         self.tree.delete(*self.tree.get_children())
@@ -225,104 +207,67 @@ class FileRenamerApp:
             
         elif rule == "序号生成":
             format_str = self.rule_params["format"].get()
-            return f"{format_str.format(n=1)}{ext}"  # 实际序号在批量处理时生成
+            return format_str.format(n=self.files.index(original) + 1)
             
         elif rule == "日期前缀":
             date_format = self.rule_params["date_format"].get()
-            date_str = datetime.now().strftime(date_format)
-            return f"{date_str}_{original}"
-            
+            current_date = datetime.now().strftime(date_format)
+            return f"{current_date}_{original}"
+
         return original
 
     def preview(self):
-        if not self.files:
-            messagebox.showwarning("警告", "请先添加文件")
-            return
-            
-        try:
-            for item in self.tree.get_children():
-                self.tree.delete(item)
-                
-            counter = 1
-            for idx, file in enumerate(self.files):
-                original = os.path.basename(file)
-                new_name = self.generate_new_name(original)
-                
-                # 处理序号生成
-                if self.rule_type.get() == "序号生成":
-                    format_str = self.rule_params["format"].get()
-                    base, ext = os.path.splitext(new_name)
-                    new_name = f"{format_str.format(n=counter)}{ext}"
-                    counter += 1
-                
-                self.tree.insert("", "end", values=(original, new_name))
-                
-            self.status.config(text="预览生成完成")
-        except Exception as e:
-            messagebox.showerror("错误", f"生成预览失败: {str(e)}")
+        self.tree.delete(*self.tree.get_children())
+        for file in self.files:
+            new_name = self.generate_new_name(os.path.basename(file))
+            self.tree.insert("", "end", values=(os.path.basename(file), new_name))
 
     def execute_rename(self):
-        if not messagebox.askyesno("确认", "确定要执行重命名操作吗？"):
+        if not self.files:
+            messagebox.showwarning("警告", "没有文件可重命名")
             return
-            
-        try:
-            # 创建备份
-            backup_dir = f"rename_backup_{datetime.now().strftime('%Y%m%d%H%M%S')}"
-            os.makedirs(backup_dir, exist_ok=True)
-            
-            operations = []
-            counter = 1
-            
-            for idx, file in enumerate(self.files):
-                original_path = Path(file)
-                new_name = self.tree.item(self.tree.get_children()[idx])["values"][1]
-                new_path = original_path.parent / new_name
-                
-                # 备份原始文件
-                shutil.copy2(file, os.path.join(backup_dir, original_path.name))
-                
-                # 执行重命名
-                original_path.rename(new_path)
-                operations.append((str(original_path), str(new_path)))
-                
-            # 记录操作日志
-            self.undo_stack.append({
-                "backup_dir": backup_dir,
-                "operations": operations
-            })
-            
-            # 更新文件列表
-            self.files = [str(new) for _, new in operations]
-            self.update_file_list()
-            
-            messagebox.showinfo("成功", f"已完成{len(operations)}个文件的重命名")
-            self.status.config(text="操作完成")
-            
-        except Exception as e:
-            messagebox.showerror("错误", f"重命名失败: {str(e)}")
-            self.status.config(text="操作失败")
+
+        self.backup_dir = os.path.join(os.getcwd(), "backup", datetime.now().strftime("%Y%m%d%H%M%S"))
+        os.makedirs(self.backup_dir, exist_ok=True)
+
+        operations = []
+        for file in self.files:
+            new_name = self.generate_new_name(os.path.basename(file))
+            if new_name != os.path.basename(file):
+                backup_file = shutil.copy(file, self.backup_dir)
+                os.rename(file, os.path.join(os.path.dirname(file), new_name))
+                operations.append((file, new_name))
+
+        # 保存操作记录
+        self.undo_stack.append({
+            "operations": operations,
+            "backup_dir": self.backup_dir
+        })
+        
+        self.status.config(text="重命名完成")
+        messagebox.showinfo("成功", "文件重命名完成")
 
     def undo(self):
         if not self.undo_stack:
             messagebox.showinfo("信息", "没有可撤销的操作")
             return
-            
+
         last_op = self.undo_stack.pop()
         try:
             # 恢复文件
             for orig, new in reversed(last_op["operations"]):
                 Path(new).rename(orig)
-                
+
             # 删除备份
             shutil.rmtree(last_op["backup_dir"])
-            
+
             # 更新文件列表
             self.files = [orig for orig, _ in last_op["operations"]]
             self.update_file_list()
-            
+
             messagebox.showinfo("成功", "已撤销最后一次操作")
             self.status.config(text="撤销完成")
-            
+
         except Exception as e:
             messagebox.showerror("错误", f"撤销失败: {str(e)}")
             self.status.config(text="撤销失败")
